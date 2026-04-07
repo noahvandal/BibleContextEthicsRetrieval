@@ -217,6 +217,11 @@ class TestLlamaCppServer:
 # ---------------------------------------------------------------------------
 
 class TestEmbeddingServiceEmbed:
+    def test_init_does_not_start_llama_server(self, cfg):
+        with patch.object(_LlamaCppServer, "ensure_running") as mock_ensure:
+            EmbeddingService(cfg)
+        mock_ensure.assert_not_called()
+
     def test_single_string_returns_one_vector(self, cfg, healthy_server):
         vec = [0.1, 0.2, 0.3]
         with patch.object(httpx.Client, "post", return_value=_embed_response([vec])):
@@ -281,7 +286,10 @@ class TestEmbeddingServiceChroma:
         mock_chroma_client = MagicMock()
         mock_chroma_client.get_or_create_collection.return_value = mock_collection
 
-        with patch("chromadb.PersistentClient", return_value=mock_chroma_client):
+        fake_chromadb = MagicMock()
+        fake_chromadb.PersistentClient.return_value = mock_chroma_client
+
+        with patch("src.embedding.embedder._import_chromadb", return_value=fake_chromadb):
             service = EmbeddingService(
                 cfg,
                 chroma=ChromaConfig(path="/tmp/fake", collection_name="test"),

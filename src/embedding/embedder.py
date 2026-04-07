@@ -14,10 +14,12 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
-import chromadb
 import httpx
+
+if TYPE_CHECKING:
+    import chromadb
 
 
 # ---------------------------------------------------------------------------
@@ -153,8 +155,22 @@ class _LlamaCppServer:
 # Public interface
 # ---------------------------------------------------------------------------
 
+def _import_chromadb() -> Any:
+    try:
+        import chromadb
+    except ImportError as exc:
+        raise ImportError(
+            "EmbeddingService requires the `chromadb` package when a ChromaConfig "
+            "is provided."
+        ) from exc
+    return chromadb
+
 class EmbeddingService:
     """Embed text and optionally store/query vectors in ChromaDB.
+
+    Construction is intentionally lazy with respect to llama.cpp: creating an
+    EmbeddingService does not start or attach to a server. Startup only happens
+    when ``ensure_running()``, ``embed()``, ``add()``, or ``query()`` is called.
 
     Usage — raw embeddings only:
         svc = EmbeddingService(EmbeddingConfig(model_path="..."))
@@ -192,8 +208,9 @@ class EmbeddingService:
         self._server = _LlamaCppServer(config, binary)
         self._client = httpx.Client(timeout=http_timeout)
 
-        self._collection: chromadb.Collection | None = None
+        self._collection: Any | None = None
         if chroma is not None:
+            chromadb = _import_chromadb()
             db = chromadb.PersistentClient(path=chroma.path)
             self._collection = db.get_or_create_collection(
                 name=chroma.collection_name,

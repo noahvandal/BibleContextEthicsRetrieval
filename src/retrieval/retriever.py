@@ -137,6 +137,9 @@ class RetrievalConfig:
     # Reciprocal Rank Fusion constant (higher k = less aggressive fusion)
     rrf_k: int = 60
 
+    # Dense retrieval via query embeddings
+    use_dense: bool = True
+
     # BM25 sparse retrieval
     use_bm25: bool = True
     bm25_index_path: str = "./bm25_index"
@@ -190,6 +193,9 @@ class BibleRetriever:
         self._config = config or RetrievalConfig()
         self._bm25: BM25Index | None = None
         self._reranker: CrossEncoderReranker | None = None
+
+        if not self._config.use_dense and not self._config.use_bm25:
+            raise ValueError("At least one retrieval stage must be enabled.")
 
         if self._config.use_bm25:
             self._bm25 = self._load_or_build_bm25()
@@ -311,9 +317,34 @@ class BibleRetriever:
         n: int,
         where: dict | None,
     ) -> list[RetrievalResult]:
+        if self._config.use_bm25 and not self._config.use_dense:
+            return self._sparse_query(query, n=n, where=where)
         if self._bm25 is not None:
             return self._hybrid_query(query, n=n, where=where)
         return self._dense_query(query, n=n, where=where)
+
+    def _sparse_query(
+        self,
+        query: str,
+        *,
+        n: int,
+        where: dict | None,
+    ) -> list[RetrievalResult]:
+        if self._bm25 is None:
+            raise RuntimeError("BM25 retrieval is not configured.")
+
+        books = _books_from_where(where)
+        bm25_hits = self._bm25.search(query, n=self._config.candidates, books=books)
+        candidates = [self._bm25.get_by_id(vid) for vid, _ in bm25_hits]
+
+        if self._reranker is not None:
+            scored = self._reranker.rerank(query, candidates)
+            candidates = [
+                dataclasses.replace(result, rerank_score=score)
+                for result, score in scored
+            ]
+
+        return candidates[:n]
 
     def _dense_query(
         self,
