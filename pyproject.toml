@@ -1,0 +1,36 @@
+[project]
+name = "bibleretrieval"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "bm25s>=0.2",
+    "chromadb>=0.5",
+    "httpx>=0.27",
+    "huggingface-hub>=0.23",
+    "pythonbible[kjv]==0.15.5",
+    "pytest>=8.0",
+    "sentence-transformers>=3.0",
+    "tqdm>=4.66",
+    "torch==2.6.0+cu124",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+markers = [
+    "integration: hits a real llama-server and ChromaDB (requires model file)",
+]
