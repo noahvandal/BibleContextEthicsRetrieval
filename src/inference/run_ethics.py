@@ -58,7 +58,8 @@ def _build_parser() -> argparse.ArgumentParser:
         "--generation-model-path",
         default=os.environ.get(
             "GEN_MODEL_PATH",
-            str(Path.home() / ".cache/llama.cpp/Qwen3-4B-Q4_K_M.gguf"),
+            str(Path.home() / ".cache/llama.cpp/Qwen3-4B-Q4_K_M.gguf")
+            # str(Path.home() / ".cache/llama.cpp/Qwen3-8B-Q4_K_M.gguf")
         ),
         metavar="PATH",
         help="Path to the GGUF generation model.",
@@ -101,6 +102,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=5,
         metavar="N",
         help="How many retrieved Bible verses to prepend in bible mode.",
+    )
+    p.add_argument(
+        "--surrounding-verses",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Include N surrounding verses before and after each retrieved verse in bible mode.",
     )
     p.add_argument(
         "--max-tokens",
@@ -347,9 +355,12 @@ def main(argv: list[str] | None = None) -> None:
             top_k_verses=args.top_k_verses,
             max_tokens=args.max_tokens,
             temperature=args.temperature,
+            surrounding_verses=args.surrounding_verses,
         ),
         **runner_kwargs,
     )
+    if args.top_k_verses == 5 and args.max_tokens == 128 and args.temperature == 0.0:
+        runner._config.surrounding_verses = args.surrounding_verses
 
     print(f"Generation model : {gen_model}")
     print(f"llama-server     : {binary}")
@@ -383,6 +394,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Chroma           : {args.chroma_path} / {args.collection}")
         print(f"BM25 index       : {args.bm25_index_path}")
         print(f"Reranker         : {not args.dense_only and not args.no_reranker}")
+        print(f"Surrounding verses: {args.surrounding_verses}")
         if not args.no_reranker and not args.dense_only:
             print(f"Reranker device  : {args.reranker_device}")
     print()

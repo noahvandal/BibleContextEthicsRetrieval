@@ -21,6 +21,7 @@ def test_parser_defaults_to_small_smoke_test_mode():
     assert args.embed_port == 8080
     assert args.use_dense_retrieval is False
     assert args.reranker_device == "cuda"
+    assert args.surrounding_verses == 0
 
 
 def test_write_jsonl_writes_one_json_object_per_line(tmp_path: Path):

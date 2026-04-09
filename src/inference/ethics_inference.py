@@ -17,7 +17,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, Sequence
+from typing import TYPE_CHECKING, Any, Literal, Protocol, Sequence
 
 import httpx
 from tqdm import tqdm
@@ -30,6 +30,9 @@ from src.datasets.hendrycks_dataset.hendrycks_handler import (
     HendrycksHandler,
     HendrycksRecord,
 )
+
+if TYPE_CHECKING:
+    from src.datasets.bible_dataset.bible_handler import BibleHandler
 
 
 class SupportsGenerate(Protocol):
@@ -223,6 +226,7 @@ class EthicsInferenceConfig:
     max_tokens: int = 128
     temperature: float = 0.0
     top_k_verses: int = 5
+    surrounding_verses: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,11 +253,13 @@ class EthicsInferenceRunner:
         *,
         handler: HendrycksHandler | None = None,
         retriever: SupportsBibleSearch | None = None,
+        bible_handler: "BibleHandler | None" = None,
         config: EthicsInferenceConfig | None = None,
     ) -> None:
         self._client = generation_client
         self._handler = handler or HendrycksHandler()
         self._retriever = retriever
+        self._bible_handler = bible_handler
         self._config = config or EthicsInferenceConfig()
 
     def ensure_model_running(self, startup_timeout: float = 60.0) -> None:
@@ -346,8 +352,49 @@ class EthicsInferenceRunner:
             return ()
 
         results = self._retriever.search(record.text, n=self._config.top_k_verses)
-        verses = tuple(f"{item.reference} {item.text}" for item in results)
+        if self._config.surrounding_verses > 0:
+            verses = self._expand_surrounding_context(results)
+        else:
+            verses = tuple(f"{item.reference} {item.text}" for item in results)
         return verses
+
+    def _expand_surrounding_context(self, results: Sequence[Any]) -> tuple[str, ...]:
+        seen: set[int] = set()
+        expanded: list[str] = []
+        radius = self._config.surrounding_verses
+        bible_handler = self._bible_handler or self._load_bible_handler()
+
+        for item in results:
+            try:
+                center = bible_handler.get_verse(item.verse_id)
+                chapter_verse_count = bible_handler.get_verse_count(center.book, item.chapter)
+            except Exception:
+                continue
+
+            start_verse = max(1, item.verse - radius)
+            end_verse = min(chapter_verse_count, item.verse + radius)
+
+            for verse_num in range(start_verse, end_verse + 1):
+                try:
+                    verse = bible_handler.get_verse_by_location(
+                        center.book,
+                        item.chapter,
+                        verse_num,
+                    )
+                except Exception:
+                    continue
+                if verse.verse_id in seen:
+                    continue
+                seen.add(verse.verse_id)
+                expanded.append(f"{verse.reference} {verse.text}")
+
+        return tuple(expanded)
+
+    def _load_bible_handler(self) -> "BibleHandler":
+        from src.datasets.bible_dataset.bible_handler import BibleHandler
+
+        self._bible_handler = BibleHandler()
+        return self._bible_handler
 
     def _build_prompt(
         self,
